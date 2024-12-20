@@ -1,4 +1,4 @@
-# Scraper_Chatbot
+# Web_Scraper_Chatbot
 
 Web Scraper Chatbot Platform
 
