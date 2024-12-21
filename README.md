@@ -45,7 +45,6 @@ Contributing
 
 Contributions are welcome! Please fork the repository and submit a pull request for any enhancements or bug fixes.
 
-Contact
 
 Author: Harsh Singh
 
