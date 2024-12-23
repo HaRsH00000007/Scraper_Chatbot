@@ -1,7 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from config import settings
-from app.authentication.models import User
+from app.authentication.models import User, Session
 from app.subscription.models import Subscription, UserSubscription
 
 async def init_db():
@@ -9,7 +9,7 @@ async def init_db():
 
     await init_beanie(
         database=client[settings.DATABASE_NAME],
-        document_models=[User, Subscription, UserSubscription]
+        document_models=[User, Session, Subscription, UserSubscription]
     )
 
     if not await Subscription.find_one():

@@ -27,6 +27,20 @@ from typing import Optional
 #     token_type: str
 
 
+# Pydantic models
+class User(BaseModel):
+    email: EmailStr
+    password: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+
 
 
 class UserRegistrationRequest(BaseModel):
