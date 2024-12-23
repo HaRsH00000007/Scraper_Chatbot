@@ -12,6 +12,8 @@ def create_app():
         allow_headers=["*"],  # Allows all headers
     )
     from app.authentication.routers import auth_router
+    from app.subscription.routers import subscription_router
     app.include_router(auth_router)
+    app.include_router(subscription_router)
     return app
 
