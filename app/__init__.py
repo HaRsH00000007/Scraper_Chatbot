@@ -13,7 +13,10 @@ def create_app():
     )
     from app.authentication.routers import auth_router
     from app.subscription.routers import subscription_router
+    from app.chat_bot.routers import scrap_router
+
     app.include_router(auth_router)
     app.include_router(subscription_router)
+    app.include_router(scrap_router)
     return app
 

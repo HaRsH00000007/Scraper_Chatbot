@@ -3,13 +3,14 @@ from beanie import init_beanie
 from config import settings
 from app.authentication.models import User, Session
 from app.subscription.models import Subscription, UserSubscription
+from app.chat_bot.models import ChatBot
 
 async def init_db():
     client = AsyncIOMotorClient(settings.MONGODB_URL)
 
     await init_beanie(
         database=client[settings.DATABASE_NAME],
-        document_models=[User, Session, Subscription, UserSubscription]
+        document_models=[User, Session, Subscription, UserSubscription, ChatBot]
     )
 
     if not await Subscription.find_one():
