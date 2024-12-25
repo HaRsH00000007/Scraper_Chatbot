@@ -6,7 +6,7 @@ from app.subscription.models import Subscription, UserSubscription
 from app.authentication.schemas import UserRegistrationRequest, Token, LoginRequest
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
-import jwt
+from jose import jwt
 from app.authentication.helper import create_access_token, validate_access_token, create_session, validate_session
 from config import settings
 from passlib.hash import bcrypt
@@ -58,7 +58,6 @@ async def register_user(
     access_token = create_access_token(data={"sub": user.email, "user_id": user.id})
     activation_link = f"{settings.DOMAIN_URL}/activate/{access_token}"
     mail_body = body = f'<p>Click the link to activate your account: <a href="{activation_link}">{activation_link}</a></p>'
-    # breakpoint()
     # send_email_smtp(to_email=user_email, body=mail_body, subject="Activate your account")
     background_tasks.add_task(
         send_email_smtp,
@@ -109,12 +108,23 @@ async def login(login_request: LoginRequest):
     await create_session(user_email, access_token)
     return {"access_token": f"Bearer {access_token}", "token_type": "bearer"}
 
-# Logout route
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+security = HTTPBearer()
+
 @auth_router.post("/logout")
-async def logout(token: str):
-    # Validate the session based on the token
-    session = await validate_session(token)
-    # Mark session as inactive (optional, if you don't want to delete the session)
-    session.token = None
-    await session.save()
-    return {"message": "Logged out successfully."}
+async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        # Get token from Bearer header
+        token = credentials.credentials
+        # Validate the session based on the token
+        session = await validate_session(token)
+        # Mark session as inactive
+        session.token = None
+        await session.save()
+        return {"message": "Logged out successfully."}
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
