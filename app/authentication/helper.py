@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException
-import jwt
+from jose import jwt
 from app.authentication.models import Session
 from datetime import datetime, timedelta, timezone
 from config import settings
