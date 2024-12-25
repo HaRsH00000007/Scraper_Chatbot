@@ -7,17 +7,20 @@ from app.authentication.schemas import UserRegistrationRequest, Token, LoginRequ
 from fastapi import APIRouter, HTTPException
 from passlib.context import CryptContext
 from jose import jwt
-from app.authentication.helper import create_access_token, validate_access_token, create_session, validate_session
+from app.authentication.helper import (
+    create_access_token, validate_access_token, create_session, validate_session,
+    get_current_user, oauth2_scheme
+)
 from config import settings
 from passlib.hash import bcrypt
-from fastapi.security import OAuth2PasswordBearer
-from fastapi.security.oauth2 import OAuth2PasswordRequestForm
+from typing import Annotated
+from fastapi.security import OAuth2PasswordRequestForm
 from app.authentication.send_mail import send_email_smtp
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2 password bearer for token
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 # load_dotenv()
 auth_router = APIRouter()
 
@@ -87,14 +90,16 @@ async def activate_account(access_token: str, password: str):
 
     # Create and return JWT token
     access_token = create_access_token(data={"sub": user.email, "user_id": user.id})
-    return {"message": "Account activated successfully.", "access_token": access_token}
-
+    return {"message": "Account activated successfully.", "access_token": f"Bearer {access_token}",
+            "token_type": "bearer"}
 
 
 # Login route
 @auth_router.post("/login", response_model=Token)
 async def login(login_request: LoginRequest):
+# async def login(login_request: Annotated[OAuth2PasswordRequestForm, Depends()]):
     user_email = login_request.email
+    # user_email = login_request.username
     db_user = await User.find_one({"email": user_email})
     if not db_user or not bcrypt.verify(login_request.password, db_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -106,25 +111,26 @@ async def login(login_request: LoginRequest):
     )
     # Create session
     await create_session(user_email, access_token)
-    return {"access_token": f"Bearer {access_token}", "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer"}
 
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-security = HTTPBearer()
 
 @auth_router.post("/logout")
-async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def logout(token: str = Depends(oauth2_scheme)):
     try:
-        # Get token from Bearer header
-        token = credentials.credentials
         # Validate the session based on the token
         session = await validate_session(token)
         # Mark session as inactive
-        session.token = None
+        session.token = ""
+        session.is_active = False
         await session.save()
+
         return {"message": "Logged out successfully."}
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=401,
             detail="Invalid token"
         )
+
+@auth_router.get("/user_profile")
+async def get_user_profile(current_user: User = Depends(get_current_user)):
+    return current_user
