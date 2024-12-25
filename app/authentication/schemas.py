@@ -42,7 +42,6 @@ class Token(BaseModel):
 
 
 
-
 class UserRegistrationRequest(BaseModel):
     email: EmailStr
     subscription_id: str

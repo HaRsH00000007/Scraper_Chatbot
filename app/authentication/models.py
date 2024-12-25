@@ -4,8 +4,6 @@ from beanie import Document
 from pydantic import EmailStr, Field
 from datetime import datetime, timezone
 
-
-
 class User(Document):
     id: str = Field(default_factory=lambda: str(uuid4()))
     email: EmailStr
