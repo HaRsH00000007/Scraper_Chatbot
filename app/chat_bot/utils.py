@@ -4,69 +4,242 @@ import requests
 from app.chat_bot.models import ChatBot
 from app.authentication.models import User
 from bs4 import BeautifulSoup
+from fastapi import HTTPException, Depends, Request
+from jose import jwt  # For token decoding
+from config import Settings
+from app.chat_bot.schema import llm
+import re
+import concurrent.futures
+from tqdm import tqdm
+from urllib.parse import urlparse, urlunparse
+from chromadb.utils import embedding_functions
+import chromadb
 
-def crawl_logic(homepage: str, max_pages: int = 100) -> Dict[str, List[str]]:
-    """
-    Function to handle the crawling logic.
-    """
-    visited = set()
-    to_visit = [homepage]
-    all_urls = []
 
-    while to_visit and len(visited) < max_pages:
-        current_url = to_visit.pop(0)
-        try:
-            response = requests.get(
-                current_url, 
-                verify=False, 
-                timeout=10, 
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            )
-            soup = BeautifulSoup(response.text, "html.parser")
-            for link in soup.find_all("a", href=True):
-                url = urljoin(homepage, link['href'])
-                if url not in visited and url.startswith(homepage):  # Ensure it's part of the homepage domain
-                    to_visit.append(url)
-                    visited.add(url)
-                    all_urls.append(url)
-        except Exception as e:
-            print(f"Error crawling {current_url}: {e}")
-
-    return {
-        "status": "success",
-        "homepage": homepage,
-        "crawled_urls": all_urls
-    }
+chroma_client = chromadb.Client()
 
 
 async def chabot_create():
     existing_user = await User.find_one({"email": "user_email"})
     chatbot = ChatBot(user=existing_user)
     await chatbot.insert()
-    pass
 
 
-from fastapi import HTTPException, Depends, Request
-from jose import jwt  # For token decoding
-from config import Settings
+def scrape_logic(urls: List[str]) -> List[Dict]:
+    def scrape_single_url(url: str) -> Dict:
+        try:
+            response = requests.get(
+                url, 
+                verify=False, 
+                timeout=10, 
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            )
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
 
-async def login_required(request: Request):
+            for script in soup(["script", "style"]):
+                script.decompose()
+
+            text = soup.get_text()
+            text = re.sub(r'\s+', ' ', text).strip()
+            text = re.sub(r'[^\w\s.,?!-]', '', text)
+
+            return {"url": url, "content": text, "status": "success"}
+        except Exception as e:
+            return {"url": url, "content": "", "status": f"error: {str(e)}"}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(tqdm(executor.map(scrape_single_url, urls), total=len(urls), desc="Scraping URLs"))
+    return results
+
+
+# def process_and_store_logic(scraped_data: List[Dict]):
+#     chroma_docs, chroma_meta, chroma_ids = [], [], []
+#     doc_counter = 0
+
+#     for item in scraped_data:
+#         if item.status == "success" and item.content:
+#             chunks = chunk_text(item.content)
+#             for chunk in chunks:
+#                 chroma_docs.append(chunk)
+#                 chroma_meta.append({"url": item.url})
+#                 chroma_ids.append(f"doc_{doc_counter}")
+#                 doc_counter += 1
+
+#     if chroma_docs:
+#         chroma_collection.add(
+#             documents=chroma_docs,
+#             metadatas=chroma_meta,
+#             ids=chroma_ids
+#         )
+
+# def chunk_text(text: str, chunk_size: int = 1000) -> List[str]:
+#     words = text.split()
+#     chunks, current_chunk, current_length = [], [], 0
+
+#     for word in words:
+#         current_length += len(word) + 1
+#         if current_length > chunk_size:
+#             chunks.append(' '.join(current_chunk))
+#             current_chunk = [word]
+#             current_length = len(word)
+#         else:
+#             current_chunk.append(word)
+
+#     if current_chunk:
+#         chunks.append(' '.join(current_chunk))
+
+#     return chunks
+
+def process_and_store_logic(scraped_data: List[Dict], chatbot_id: str):
+    print(f"scrappped::{scraped_data}")
+    chroma_docs, chroma_meta, chroma_ids = [], [], []
+    doc_counter = 0
+
+    # Dynamically create or get the collection using the chatbot_id
+    chroma_collection = chroma_client.get_or_create_collection(
+        name=chatbot_id,  # The name of the collection is set dynamically
+        embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"  # You can replace this with your own model if needed
+        )
+    )
+
+    # Process the scraped data and store it in Chroma
+    for item in scraped_data:
+        print(f"item::{item}")
+        if item["status"] == "success" and item["content"]:
+            print("yes come")
+            chunks = chunk_text(item["content"])
+            for chunk in chunks:
+                chroma_docs.append(chunk)
+                chroma_meta.append({"url": item["url"]})
+                chroma_ids.append(f"doc_{doc_counter}")
+                doc_counter += 1
+    max_batch_size = 5000
+
+    for i in range(0, len(chroma_docs), max_batch_size):
+        batch_docs = chroma_docs[i:i + max_batch_size]
+        batch_meta = chroma_meta[i:i + max_batch_size]
+        batch_ids = chroma_ids[i:i + max_batch_size]
+
+
+        # If there are any documents, add them to the Chroma collection
+        print(f"Adding batch {i // max_batch_size + 1} to ChromaDB")
+        chroma_collection.add(
+            documents=batch_docs,
+            metadatas=batch_meta,
+            ids=batch_ids
+        )
+# Your chunk_text function stays the same
+def chunk_text(text: str, chunk_size: int = 1000) -> List[str]:
+    words = text.split()
+    chunks, current_chunk, current_length = [], [], 0
+
+    for word in words:
+        current_length += len(word) + 1
+        if current_length > chunk_size:
+            chunks.append(' '.join(current_chunk))
+            current_chunk = [word]
+            current_length = len(word)
+        else:
+            current_chunk.append(word)
+
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+
+    return chunks
+
+
+def crawl_logic(homepages: List[str], max_pages: int = 100) -> Dict[str, List[str]]:
     """
-    Dependency to enforce login.
-    Extract and validate the token from the Authorization header.
+    Function to handle the crawling logic for multiple homepages.
     """
-    token = request.headers.get("Authorization")
-    if not token or not token.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Authentication required")
+    results = {}  # Dictionary to store crawled URLs for each homepage
 
-    token = token.split(" ")[1]
+    def normalize_url(url):
+        parsed = urlparse(url)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", "", ""))
+
+    all_crawled_urls = []
+    for homepage in homepages:
+        visited = set()
+        to_visit = [homepage]
+        crawled_urls = []
+
+        while to_visit and len(visited) < max_pages:
+            current_url = to_visit.pop(0)
+            try:
+                print(f"Crawling: {current_url} (Domain: {homepage})")
+                response = requests.get(
+                    current_url,
+                    verify=False,
+                    timeout=10,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                )
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                for link in soup.find_all("a", href=True):
+                    url = urljoin(current_url, link['href'])
+                    normalized_url = normalize_url(url)
+                    if normalized_url not in visited and normalized_url.startswith(homepage):
+                        to_visit.append(normalized_url)
+                        visited.add(normalized_url)
+                        crawled_urls.append(normalized_url)
+            except Exception as e:
+                print(f"Error crawling {current_url}: {e}")
+
+        results[homepage] = crawled_urls
+        all_crawled_urls.extend(crawled_urls)
+    scraped_results = scrape_logic(all_crawled_urls)
+    process_and_store_logic(scraped_results, "97401bb2-d261-4761-9e7c-8c72261ebb24")
+
+    
+    return {
+        "status": "success",
+        "crawled_urls": results,
+        "scraped_data": scraped_results
+    }
+
+
+def query_logic(query: str) -> Dict:
     try:
-        payload = jwt.decode(token, Settings.SECRET_KEY, Settings.ALGORITHM)
-        user = await User.find_one({"email": payload.get("sub")})
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-        return {"email": user["email"], "id": str(user["_id"])}
+        results = chroma_collection.query(
+            query_texts=[query],
+            n_results=1
+        )
+
+        contexts = [doc for doc in results['documents'][0]]
+
+        system_prompt = """You are a helpful AI assistant that answers questions based on the provided context.
+        Your answers should be accurate, informative, and directly related to the context provided."""
+
+        user_prompt = f"""Context information is below.
+        ---------------------
+        {' '.join(contexts)}
+        ---------------------
+        Given the context information, please answer this question: {query}
+
+        If the context doesn't contain relevant information, please say so instead of making up an answer."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        response = llm.invoke(messages).content
+
+        return {
+            "query": query,
+            "response": response,
+            "contexts": contexts
+        }
     except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return {
+            "query": query,
+            "response": f"Error processing query: {e}",
+            "contexts": []
+        }

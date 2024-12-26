@@ -1,36 +1,32 @@
-from fastapi import APIRouter,HTTPException, Request, Depends
+from fastapi import APIRouter,HTTPException, Request, Depends, Path
 from typing import List, Dict
-from .utils import crawl_logic
-from .schema import CrawlResponse
+from .utils import crawl_logic, scrape_logic,process_and_store_logic,query_logic
+from .schema import CrawlResponse, ChatBotIn,ChatBotOut,ScrapedContent,QueryResponse,CrawlRequest
 from app.chat_bot.models import ChatBot
 from app.authentication.models import User
-from app.chat_bot.utils import login_required
 from typing import Any
+from fastapi.responses import JSONResponse
+
+
 scrap_router = APIRouter()
 
-@scrap_router.get("/crawl", response_model=CrawlResponse)
-def crawl_urls(homepage: str, max_pages: int = 100) -> Dict[str, List[str]]:
-    try:
-        result = crawl_logic(homepage, max_pages)
-        if not result["crawled_urls"]:
-            raise HTTPException(status_code=404, detail="No URLs found during crawling")
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @scrap_router.post("/chatbot")
-async def create_chatbot(name:str,request: Request, user: dict = Depends(login_required)) -> Any:
+async def create_chatbot(name:str,chatbot: ChatBotIn) -> Any:
     """
     API to create a chatbot for the currently logged-in user.
     """
     # Fetch the currently logged-in user from the database
-    # existing_user = await User.find_one({"email": user["email"]})
+    user = await User.find_one({"_id":chatbot.user_id})
+    print(user.id,"user")
+    # existing_user = await User.find_one({"email": "gautamkr1998+2@gmail.com"})
     
-    # if not existing_user:
-    #     raise HTTPException(status_code=404, detail="User not found")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     # Create a new chatbot for the authenticated user
-    chatbot = ChatBot(user="existing_user",name=name)  # Add additional fields if required
+    chatbot = ChatBot(user=user,name=name)  # Add additional fields if required
     await chatbot.insert()
 
     return {
@@ -38,37 +34,110 @@ async def create_chatbot(name:str,request: Request, user: dict = Depends(login_r
         "message": "Chatbot created successfully",
         "chatbot": {
             "id": str(chatbot.id),
-            "user_id": str("existing user"),
+            "user_id": user.id,
             "name": chatbot.name
         }
     }
 
 
-@scrap_router.get("/chatbots")
-async def list_chatbots(user: dict = Depends(login_required)) -> Any:
+@scrap_router.get("/chatbots", response_model=List[ChatBotOut])
+async def list_chatbots():
     """
-    API to list all chatbots for the currently logged-in user.
+    API to list all chatbots.
     """
-    # Fetch the currently logged-in user from the database
-    # existing_user = await User.find_one({"email": user["email"]})
+    # Fetch all chatbots from the database
+    chatbots = await ChatBot.all().to_list()
+    chatbots_with_user = []
 
-    # if not existing_user:
-    #     raise HTTPException(status_code=404, detail="User not found")
+    for chatbot in chatbots:
+        # Fetch the associated user for each chatbot
+        user = await chatbot.user.fetch()
 
-    # Fetch all chatbots associated with the logged-in user
-    chatbots = await ChatBot.find(ChatBot.user == "existing_user").to_list()
+        # Construct a response dictionary with only the needed fields
+        chatbot_dict = chatbot.dict()
+        chatbot_dict["user"] = {"id": user.id, "email": user.email}  # Only include user id and email
 
-    # Return the list of chatbots
-    return {
-        "status": "success",
-        "message": "Chatbots retrieved successfully",
-        "chatbots": [
-            {
-                "id": str(chatbot.id),
-                "name": chatbot.name,
-                "is_active": chatbot.is_active,
-                "user_id": str("id"),
-            }
-            for chatbot in chatbots
-        ],
-    }
+        # Add the chatbot with user data to the list
+        chatbots_with_user.append(chatbot_dict)
+
+    # Return the list of chatbots with user info
+    return chatbots_with_user
+
+@scrap_router.get("/chatbots/{chatbot_id}", response_model=ChatBotOut)
+async def get_chatbot(chatbot_id: str = Path(..., description="The ID of the chatbot to retrieve")) -> Any:
+    """
+    API to get details of a specific chatbot by ID.
+    """
+    # Fetch the chatbot with the specified ID
+    chatbot = await ChatBot.find_one({"_id": chatbot_id})
+    
+    if not chatbot:
+        raise HTTPException(status_code=404, detail="Chatbot not found")
+    
+    # Fetch the associated user
+    user = await chatbot.user.fetch()
+    
+    # Prepare the chatbot response, including only necessary user fields
+    chatbot_dict = chatbot.dict()  # Get chatbot data as a dictionary
+    chatbot_dict["user"] = {"id": user.id, "email": user.email}  # Only include 'id' and 'email'
+
+    # Return the chatbot data with user details, matching the response model
+    return chatbot_dict
+
+@scrap_router.delete("/chatbots/{chatbot_id}")
+async def delete_chatbot(chatbot_id: str = Path(..., description="The ID of the chatbot to delete")):
+    """
+    API to delete a chatbot by its ID.
+    """
+    # Fetch the chatbot with the specified ID
+    chatbot = await ChatBot.find_one({"_id": chatbot_id})
+    
+    if not chatbot:
+        # Raise HTTP 404 if chatbot not found
+        raise HTTPException(status_code=404, detail="Chatbot not found")
+    
+    # Delete the chatbot
+    await chatbot.delete()
+
+    # Return a success message
+    return JSONResponse(status_code=200, content={"detail": "Chatbot deleted successfully"})
+
+@scrap_router.post("/crawl", response_model=CrawlResponse)
+def crawl_urls(request: CrawlRequest, max_pages: int = 100) -> Dict[str, List[str]]:
+    try:
+        homepage = request.homepage
+        result = crawl_logic(homepage, max_pages)
+        if not result["crawled_urls"]:
+            raise HTTPException(status_code=404, detail="No URLs found during crawling")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+@scrap_router.post("/scrape", response_model=List[ScrapedContent])
+async def scrape_urls(urls: List[str]) -> List[Dict]:
+    try:
+        return scrape_logic(urls)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@scrap_router.post("/process_and_store")
+async def process_and_store(scraped_data: List[ScrapedContent]):
+    try:
+        process_and_store_logic(scraped_data)
+        return {"status": "success", "message": "Data processed and stored in ChromaDB"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@scrap_router.get("/query", response_model=QueryResponse)
+async def query_and_respond(query: str) -> Dict:
+    try:
+        result = query_logic(query)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
