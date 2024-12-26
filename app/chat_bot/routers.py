@@ -1,7 +1,7 @@
 from fastapi import APIRouter,HTTPException, Request, Depends, Path
 from typing import List, Dict
 from .utils import crawl_logic, scrape_logic,process_and_store_logic,query_logic
-from .schema import CrawlResponse, ChatBotIn,ChatBotOut,ScrapedContent,QueryResponse,CrawlRequest
+from .schema import CrawlResponse, ChatBotIn,ChatBotOut,ScrapedContent,QueryResponse,CrawlRequest,QueryRequest
 from app.chat_bot.models import ChatBot
 from app.authentication.models import User
 from typing import Any
@@ -115,7 +115,7 @@ def crawl_urls(request: CrawlRequest, max_pages: int = 100) -> Dict[str, List[st
     
 
 
-@scrap_router.post("/scrape", response_model=List[ScrapedContent])
+# @scrap_router.post("/scrape", response_model=List[ScrapedContent])
 async def scrape_urls(urls: List[str]) -> List[Dict]:
     try:
         return scrape_logic(urls)
@@ -123,7 +123,7 @@ async def scrape_urls(urls: List[str]) -> List[Dict]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@scrap_router.post("/process_and_store")
+# @scrap_router.post("/process_and_store")
 async def process_and_store(scraped_data: List[ScrapedContent]):
     try:
         process_and_store_logic(scraped_data)
@@ -133,9 +133,10 @@ async def process_and_store(scraped_data: List[ScrapedContent]):
 
 
 
-@scrap_router.get("/query", response_model=QueryResponse)
-async def query_and_respond(query: str) -> Dict:
+@scrap_router.post("/query", response_model=QueryResponse)
+async def query_and_respond(request: QueryRequest) -> Dict:
     try:
+        query = request.query
         result = query_logic(query)
         return result
     except Exception as e:

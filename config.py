@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     SECRET_KEY:str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int # Token expiry in minutes
+    GROQ_API_KEY:str
 
     class Config:
         env_file = ".env"

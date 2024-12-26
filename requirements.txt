@@ -14,7 +14,7 @@ certifi==2024.12.14
 cffi==1.17.1
 charset-normalizer==3.4.1
 chroma-hnswlib==0.7.6
-chromadb==0.5.23
+chromadb
 click==8.1.7
 colorama==0.4.6
 coloredlogs==15.0.1
@@ -122,11 +122,11 @@ starlette==0.41.3
 sympy==1.13.1
 tenacity==9.0.0
 threadpoolctl==3.5.0
-tokenizers==0.21.0
+tokenizers
 toml==0.10.2
 torch==2.5.1
 tqdm==4.67.1
-transformers==4.47.1
+transformers
 typer==0.15.1
 typing_extensions==4.12.2
 urllib3==2.3.0

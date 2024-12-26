@@ -4,9 +4,6 @@ import requests
 from app.chat_bot.models import ChatBot
 from app.authentication.models import User
 from bs4 import BeautifulSoup
-from fastapi import HTTPException, Depends, Request
-from jose import jwt  # For token decoding
-from config import Settings
 from app.chat_bot.schema import llm
 import re
 import concurrent.futures
@@ -14,6 +11,7 @@ from tqdm import tqdm
 from urllib.parse import urlparse, urlunparse
 from chromadb.utils import embedding_functions
 import chromadb
+from app.chat_bot.schema import QueryResponse
 
 
 chroma_client = chromadb.Client()
@@ -93,18 +91,28 @@ def scrape_logic(urls: List[str]) -> List[Dict]:
 
 #     return chunks
 
-def process_and_store_logic(scraped_data: List[Dict], chatbot_id: str):
-    print(f"scrappped::{scraped_data}")
-    chroma_docs, chroma_meta, chroma_ids = [], [], []
-    doc_counter = 0
-
-    # Dynamically create or get the collection using the chatbot_id
+def chroma_fn(id):
     chroma_collection = chroma_client.get_or_create_collection(
-        name=chatbot_id,  # The name of the collection is set dynamically
+        name=id,  # The name of the collection is set dynamically
         embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"  # You can replace this with your own model if needed
         )
     )
+    return chroma_collection
+
+def process_and_store_logic(scraped_data: List[Dict], chatbot_id: str):
+    print(f"scrappped::{scraped_data}")
+    chroma_docs, chroma_meta, chroma_ids = [], [], []
+    doc_counter = 0
+    chroma_obj = chroma_fn(chatbot_id)
+
+    # Dynamically create or get the collection using the chatbot_id
+    # chroma_collection = chroma_client.get_or_create_collection(
+    #     name=chatbot_id,  # The name of the collection is set dynamically
+    #     embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
+    #         model_name="all-MiniLM-L6-v2"  # You can replace this with your own model if needed
+    #     )
+    # )
 
     # Process the scraped data and store it in Chroma
     for item in scraped_data:
@@ -127,7 +135,7 @@ def process_and_store_logic(scraped_data: List[Dict], chatbot_id: str):
 
         # If there are any documents, add them to the Chroma collection
         print(f"Adding batch {i // max_batch_size + 1} to ChromaDB")
-        chroma_collection.add(
+        chroma_obj.add(
             documents=batch_docs,
             metadatas=batch_meta,
             ids=batch_ids
@@ -195,19 +203,27 @@ def crawl_logic(homepages: List[str], max_pages: int = 100) -> Dict[str, List[st
         results[homepage] = crawled_urls
         all_crawled_urls.extend(crawled_urls)
     scraped_results = scrape_logic(all_crawled_urls)
-    process_and_store_logic(scraped_results, "97401bb2-d261-4761-9e7c-8c72261ebb24")
+    process_and_store_logic(scraped_results, "dev-1")
 
     
     return {
         "status": "success",
-        "crawled_urls": results,
-        "scraped_data": scraped_results
+        "crawled_urls": "results",
+        "scraped_data": "scraped_results"
     }
 
 
-def query_logic(query: str) -> Dict:
+def query_logic(query: str) -> QueryResponse:
     try:
-        results = chroma_collection.query(
+        # Create or get the collection with an embedding function
+        # chroma_collection = chroma_client.get_or_create_collection(
+        #     name="97401bb2-d261-4761-9e7c-8c72261ebb",  # The name of the collection
+        #     embedding_function=embedding_functions.SentenceTransformerEmbeddingFunction(
+        #         model_name="all-MiniLM-L6-v2"  # You can replace this with your own model if needed
+        #     )
+        # )
+        chroma_obj = chroma_fn("dev-1")
+        results = chroma_obj.query(
             query_texts=[query],
             n_results=1
         )
@@ -232,14 +248,8 @@ def query_logic(query: str) -> Dict:
 
         response = llm.invoke(messages).content
 
-        return {
-            "query": query,
-            "response": response,
-            "contexts": contexts
-        }
+        return QueryResponse(query=query, response=response, contexts=contexts)
+    
     except Exception as e:
-        return {
-            "query": query,
-            "response": f"Error processing query: {e}",
-            "contexts": []
-        }
+        # If there's an error, return a structured response with the error message
+        return QueryResponse(query=query, response=f"Error processing query: {e}", contexts=[])
