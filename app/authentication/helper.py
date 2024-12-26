@@ -1,10 +1,18 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException
-# import jwt
+from fastapi import APIRouter, HTTPException, Depends, status
 from jose import jwt
 from app.authentication.models import Session
 from datetime import datetime, timedelta, timezone
 from config import settings
+from app.authentication.models import User
+from fastapi.security.oauth2 import OAuth2PasswordBearer
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/login",
+    description="Enter your JWT token in the format: Bearer <token>",
+    scheme_name="JWT"
+)
+
 
 # Helper function to create JWT token
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -22,7 +30,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 def validate_access_token(token: str):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
+        return {"email": payload.get("sub"), "user_id": payload.get("user_id")}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired.")
     except jwt.InvalidTokenError:
@@ -59,3 +67,25 @@ async def validate_session(token: str):
         raise HTTPException(status_code=401, detail="Session expired")
 
     return session
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid Credentials",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
+    # Validate token
+    payload = validate_access_token(token)
+    if not payload:
+        raise credentials_exception
+
+    # Fetch user
+    user = await User.get(payload.get("user_id"))
+    if not user:
+        raise credentials_exception
+    user_details = {
+        "user_id": user.id,
+        "email": user.email,
+    }
+    return user_details
