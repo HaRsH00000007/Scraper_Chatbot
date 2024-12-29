@@ -103,10 +103,16 @@ async def delete_chatbot(chatbot_id: str = Path(..., description="The ID of the 
     return JSONResponse(status_code=200, content={"detail": "Chatbot deleted successfully"})
 
 @scrap_router.post("/crawl", response_model=CrawlResponse)
-def crawl_urls(request: CrawlRequest, max_pages: int = 100) -> Dict[str, List[str]]:
+async def crawl_urls(request: CrawlRequest) -> Dict[str, List[str]]:
     try:
         homepage = request.homepage
-        result = crawl_logic(homepage, max_pages)
+        chatbot_id = request.chatbot_id
+        max_pages = request.max_pages
+        chatbot = await ChatBot.find_one(ChatBot.id == chatbot_id)
+        chatbot.add_links(homepage)
+        await chatbot.save()
+        
+        result = crawl_logic(homepage, chatbot_id,max_pages)
         if not result["crawled_urls"]:
             raise HTTPException(status_code=404, detail="No URLs found during crawling")
         return result
@@ -114,30 +120,12 @@ def crawl_urls(request: CrawlRequest, max_pages: int = 100) -> Dict[str, List[st
         raise HTTPException(status_code=500, detail=str(e))
     
 
-
-# @scrap_router.post("/scrape", response_model=List[ScrapedContent])
-async def scrape_urls(urls: List[str]) -> List[Dict]:
-    try:
-        return scrape_logic(urls)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# @scrap_router.post("/process_and_store")
-async def process_and_store(scraped_data: List[ScrapedContent]):
-    try:
-        process_and_store_logic(scraped_data)
-        return {"status": "success", "message": "Data processed and stored in ChromaDB"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
 @scrap_router.post("/query", response_model=QueryResponse)
 async def query_and_respond(request: QueryRequest) -> Dict:
     try:
         query = request.query
-        result = query_logic(query)
+        chatbot_id = request.chatbot_id
+        result = await query_logic(query,chatbot_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

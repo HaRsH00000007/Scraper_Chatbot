@@ -4,7 +4,7 @@ from beanie import Document,Link
 from pydantic import EmailStr, Field
 from datetime import datetime, timezone
 from app.authentication.models import User
-from typing import List
+from typing import List,Dict
 from app.chat_bot.schema import ChatMessage
 
 class ChatBot(Document):
@@ -12,6 +12,9 @@ class ChatBot(Document):
     is_active: bool = False  # For account activation
     name: str
     user: Link[User]
+    messages: List[Dict[str, str]] = Field(default_factory=list)  # Conversation history
+    crawl_links : Optional[List[str]]=None
+
     class Settings:
         name = "chatbot"
 
@@ -23,14 +26,11 @@ class ChatBot(Document):
             }
         }
         
+    def add_message(self, role: str, content: str):
+        """Add a new message to the messages list."""
+        self.messages.append({"role": role, "content": content, "timestamp": datetime.utcnow().isoformat()})
+    def add_links(self, link:List):
+        """Add a new message to the messages list."""
+        self.crawl_links=link
+        
 # Define the ChatBot Document
-class ChatBot(Document):
-    id: str = Field(default_factory=lambda: str(uuid4()))
-    is_active: bool = False  # For account activation
-    name: str
-    user: Link[User]
-    chat_history: List[ChatMessage] = []  # Optional, add this if you need to store the chat
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-    class Settings:
-        name = "chatbot"

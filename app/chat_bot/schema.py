@@ -15,11 +15,15 @@ llm = ChatGroq(
     max_tokens=4096
 )
 
-class QueryRequest(BaseModel):
-    query: str
+
 class CrawlRequest(BaseModel):
     homepage: List[str] 
     chatbot_id: str
+    max_pages:int=30
+
+class QueryRequest(BaseModel):
+    query:str
+    chatbot_id:str
 
 class ScrapedData(BaseModel):
     url: str
