@@ -96,10 +96,10 @@ async def activate_account(access_token: str, password: str):
 
 # Login route
 @auth_router.post("/login", response_model=Token)
-# async def login(login_request: LoginRequest):
-async def login(login_request: Annotated[OAuth2PasswordRequestForm, Depends()]):
-    # user_email = login_request.email
-    user_email = login_request.username
+async def login(login_request: LoginRequest):
+# async def login(login_request: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    user_email = login_request.email
+    # user_email = login_request.username
     db_user = await User.find_one({"email": user_email})
     if not db_user or not bcrypt.verify(login_request.password, db_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
