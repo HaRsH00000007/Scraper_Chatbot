@@ -27,13 +27,9 @@ class ChatBot(Document):
             }
         }
         
-    def add_message(self, role: str, content: str):
-        """Add a new message to the messages list."""
-        self.messages.append({"role": role, "content": content, "timestamp": datetime.utcnow().isoformat()})
     def add_links(self, link:List):
         """Add a new message to the messages list."""
         self.crawl_links=link
-    def add_session_id(self,id:str):
-        self.session_id=id
+
         
 # Define the ChatBot Document

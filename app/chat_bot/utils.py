@@ -180,7 +180,7 @@ def crawl_logic(homepages: List[str], chatbot_id:str,max_pages: int = 100) -> Di
     }
 
 
-async def query_logic(query: str, chatbot_id:str, session_id:str) -> QueryResponse:
+async def query_logic(query: str, chatbot_id:str,current_user_session:str) -> QueryResponse:
     try:
         # Create or get the collection with an embedding function
         # chroma_collection = chroma_client.get_or_create_collection(
@@ -189,7 +189,6 @@ async def query_logic(query: str, chatbot_id:str, session_id:str) -> QueryRespon
         #         model_name="all-MiniLM-L6-v2"  # You can replace this with your own model if needed
         #     )
         # )
-        print(f"query chatbot::{chatbot_id}")
         chroma_obj = chroma_fn(chatbot_id)
         results = chroma_obj.query(
             query_texts=[query],
@@ -229,10 +228,13 @@ async def query_logic(query: str, chatbot_id:str, session_id:str) -> QueryRespon
                 response=f"Chatbot with ID {chatbot_id} not found.",
                 contexts=[]
             )
-        print(f"session_id::{session_id}")
         # Update session ID if necessary
-        if chatbot.session_id and chatbot.session_id != session_id:
-            chatbot.session_id = session_id
+        if chatbot.session_id and chatbot.session_id != current_user_session:
+            chatbot = ChatBot(user=chatbot.user,name=chatbot.name)  # Add additional fields if required
+            await chatbot.insert()
+            chatbot.session_id = current_user_session
+        elif not chatbot.session_id:
+            chatbot.session_id = current_user_session
 
         # Append user and system messages to the chatbot's conversation history
         chatbot.messages.append({"role": "user", "content": query})

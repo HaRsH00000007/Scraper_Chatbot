@@ -126,8 +126,8 @@ async def query_and_respond(request: QueryRequest,current_user: User = Depends(g
     try:
         query = request.query
         chatbot_id = request.chatbot_id
-        session_id = request.session_id
-        result = await query_logic(query,chatbot_id,session_id)
+        current_user_session = current_user['session_id']
+        result = await query_logic(query,chatbot_id,current_user_session)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
