@@ -79,7 +79,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     payload = validate_access_token(token)
     if not payload:
         raise credentials_exception
-
+    session = await validate_session(token)
+    if not session:
+        raise credentials_exception
     # Fetch user
     user = await User.get(payload.get("user_id"))
     if not user:
@@ -87,5 +89,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     user_details = {
         "user_id": user.id,
         "email": user.email,
+        "session_id": session.id
     }
     return user_details
