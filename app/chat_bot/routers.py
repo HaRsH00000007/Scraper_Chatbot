@@ -6,6 +6,7 @@ from app.chat_bot.models import ChatBot
 from app.authentication.models import User
 from typing import Any
 from fastapi.responses import JSONResponse
+from app.authentication.helper import get_current_user
 
 
 scrap_router = APIRouter()
@@ -121,11 +122,12 @@ async def crawl_urls(request: CrawlRequest) -> Dict[str, List[str]]:
     
 
 @scrap_router.post("/query", response_model=QueryResponse)
-async def query_and_respond(request: QueryRequest) -> Dict:
+async def query_and_respond(request: QueryRequest,current_user: User = Depends(get_current_user)) -> Dict:
     try:
         query = request.query
         chatbot_id = request.chatbot_id
-        result = await query_logic(query,chatbot_id)
+        session_id = request.session_id
+        result = await query_logic(query,chatbot_id,session_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -180,7 +180,7 @@ def crawl_logic(homepages: List[str], chatbot_id:str,max_pages: int = 100) -> Di
     }
 
 
-async def query_logic(query: str, chatbot_id:str) -> QueryResponse:
+async def query_logic(query: str, chatbot_id:str, session_id:str) -> QueryResponse:
     try:
         # Create or get the collection with an embedding function
         # chroma_collection = chroma_client.get_or_create_collection(
@@ -214,21 +214,35 @@ async def query_logic(query: str, chatbot_id:str) -> QueryResponse:
             {"role": "user", "content": user_prompt}
         ]
 
-        if response := llm.invoke(messages).content:
-            print("response:::",response)
-            chatbot = await ChatBot.find_one(ChatBot.id == chatbot_id)
-            print("chatbot",chatbot)
-            print(chatbot.dict())
+        response = llm.invoke(messages).content if messages else None
 
-            if not chatbot:
-                return QueryResponse(query= query, response= f"Chatbot with ID {chatbot_id} not found.", contexts= [])
-            chatbot.add_message(role="user", content=query)
-            chatbot.add_message(role="system", content=response)
-           
-            await chatbot.save()
+        if not response:
+            return QueryResponse(query=query, response="No response found", contexts=[])
 
-            return QueryResponse(query=query, response=response, contexts=contexts)
-        return QueryResponse(query=query, response="No response found", contexts=[])
+        # Fetch the ChatBot document
+        chatbot = await ChatBot.find_one(ChatBot.id == chatbot_id)
+
+        # Handle the case where the chatbot is not found
+        if not chatbot:
+            return QueryResponse(
+                query=query,
+                response=f"Chatbot with ID {chatbot_id} not found.",
+                contexts=[]
+            )
+        print(f"session_id::{session_id}")
+        # Update session ID if necessary
+        if chatbot.session_id and chatbot.session_id != session_id:
+            chatbot.session_id = session_id
+
+        # Append user and system messages to the chatbot's conversation history
+        chatbot.messages.append({"role": "user", "content": query})
+        chatbot.messages.append({"role": "system", "content": response})
+
+        # Save the updated ChatBot document
+        await chatbot.save()
+
+        # Return the query response
+        return QueryResponse(query=query, response=response, contexts=contexts)
     
     except Exception as e:
         # If there's an error, return a structured response with the error message

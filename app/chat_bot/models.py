@@ -14,6 +14,7 @@ class ChatBot(Document):
     user: Link[User]
     messages: List[Dict[str, str]] = Field(default_factory=list)  # Conversation history
     crawl_links : Optional[List[str]]=None
+    session_id : Optional[str]=None
 
     class Settings:
         name = "chatbot"
@@ -32,5 +33,7 @@ class ChatBot(Document):
     def add_links(self, link:List):
         """Add a new message to the messages list."""
         self.crawl_links=link
+    def add_session_id(self,id:str):
+        self.session_id=id
         
 # Define the ChatBot Document

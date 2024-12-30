@@ -24,6 +24,7 @@ class CrawlRequest(BaseModel):
 class QueryRequest(BaseModel):
     query:str
     chatbot_id:str
+    session_id:str
 
 class ScrapedData(BaseModel):
     url: str
